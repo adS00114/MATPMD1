@@ -1,0 +1,298 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+
+#install.packages("readxl")
+#install.packages("DataExplorer")
+
+library("readxl")
+library("DataExplorer")
+library("miscset")
+library("ggplot2")
+
+```
+
+
+```{r}
+
+df<- read_excel("Sleep Patterns.xlsx")
+head(df)
+
+
+```
+
+
+```{r}
+dim(df)
+
+
+summary(df)
+```
+
+```{r}
+
+str(df)
+
+```
+
+
+```{r}
+print("Count of total missing values - ")
+table(df$NonDreaming=='NA')
+table(df$Dreaming=='NA')
+table(df$LifeSpan=='NA')
+
+table(df$Gestation=='NA')
+table(df$Predation=='NA')
+table(df$Exposure=='NA')
+
+table(df$Danger=='NA')
+table(df$BodyWt=='NA')
+table(df$BrainWt=='NA')
+
+```
+
+```{r}
+
+missing_column <- c("NonDreaming", "Dreaming", "LifeSpan","Gestation","TotalSleep")
+
+df[missing_column] <- sapply(df[missing_column], as.numeric)
+
+mean_val <- colMeans(df[missing_column],na.rm = TRUE)
+  
+# replacing NA with mean value of each column
+for(i in missing_column)
+  df[,i][is.na(df[,i])] <- mean_val[i]
+df
+
+```
+
+
+# Checking for duplicate data
+```{r}
+
+sum(duplicated(df))
+
+```
+
+
+# Data exploration
+
+```{r Fig1, echo=TRUE, fig.height=4, fig.width=8}
+
+numerical_column <- c("BodyWt","BrainWt","NonDreaming", "Dreaming", "LifeSpan","Gestation")
+
+boxplot(df[,numerical_column],col=rainbow(8),main="Boxplot of Numerical columns")
+
+```
+
+```{r}
+# removing outliers from the dataset
+
+Q1 <- quantile(df$BodyWt, .25)
+Q3 <- quantile(df$BodyWt, .75)
+IQR <- IQR(df$BodyWt)
+
+
+no_outliers <- subset(df, df$BodyWt> (Q1 - 1.5*IQR) & df$BodyWt< (Q3 + 1.5*IQR))
+
+
+Q1 <- quantile(no_outliers$BrainWt, .25)
+Q3 <- quantile(no_outliers$BrainWt, .75)
+IQR <- IQR(no_outliers$BrainWt)
+
+no_outliers_1 <- subset(no_outliers, no_outliers$BrainWt> (Q1 - 1.5*IQR) & no_outliers$BrainWt< (Q3 + 1.5*IQR))
+
+
+Q1 <- quantile(no_outliers_1$Gestation, .25)
+Q3 <- quantile(no_outliers_1$Gestation, .75)
+IQR <- IQR(no_outliers_1$Gestation)
+
+clean_data <- subset(no_outliers_1, no_outliers_1$Gestation> (Q1 - 1.5*IQR) & no_outliers_1$Gestation< (Q3 + 1.5*IQR))
+
+```
+
+```{r}
+head(clean_data)
+
+```
+
+```{r}
+summary(clean_data)
+
+```
+
+```{r}
+
+numerical_column <- c("BodyWt","BrainWt","NonDreaming", "Dreaming", "LifeSpan","Gestation", "TotalSleep")
+
+par(mfrow=c(2,4))
+
+for (i in numerical_column)
+  lapply(clean_data[i], hist,main=paste("Histogram of", i),col=rainbow(7),xlab=paste(i))
+       
+
+
+```
+
+```{r Fig2, echo=TRUE, fig.height=2, fig.width=8}
+
+cat_cols <- c("Predation","Exposure","Danger")
+
+library(miscset)
+
+ggplotGrid(ncol = 3,nrow = 1,
+  lapply(cat_cols,
+    function(col) {
+        ggplot(clean_data, aes_string(col)) + geom_bar( fill="steelblue") +ggtitle(paste("Bar plot of", col))
+    }))
+
+
+```
+
+
+```{r }
+mycor<-cor(clean_data[numerical_column])
+heatmap(x=mycor,symm=TRUE)
+```
+
+```{r}
+
+df <- clean_data
+
+x <- df[df$Danger == "1", ]$TotalSleep
+y <- df[df$Danger == "2", ]$TotalSleep
+tt <- t.test(x, y, paired = FALSE, alternative = "two.sided", var.equal = FALSE)
+tt
+
+```
+
+
+
+
+
+```{r}
+
+chisq.test(clean_data$Exposure, clean_data$Danger, correct=FALSE)
+
+
+```
+
+# Multiple linear regression model to predict the sleep time
+
+```{r}
+
+column <- c("BodyWt","BrainWt","NonDreaming", "Dreaming", "LifeSpan","Gestation", "TotalSleep","Predation","Exposure","Danger")
+
+MLR <- lm(TotalSleep ~ ., data = clean_data[column])
+summary(MLR)
+
+
+```
+
+```{r}
+
+
+
+sbp.res = resid(MLR)
+par(mfrow=c(2,2))
+
+with(clean_data, {
+    
+    plot(predict.lm(MLR),sbp.res,xlab="Fitted values",ylab="Residual")
+    abline(h=0)
+
+    # QQ plot
+    qqnorm(sbp.res,ylab="Total sleep")
+    qqline(sbp.res,lty=2)
+
+    # residual plot
+    plot (seq(1,length(sbp.res),1),sbp.res,xlab="Observation Order",ylab="Residual",type="b")
+    abline(h=0,lty=2)
+})
+```
+
+
+```{r}
+
+with(clean_data, {
+    
+    # try the step() function backwards to test our model selection
+    step(MLR,direction="backward")
+
+})
+
+```
+
+```{r}
+
+bet_MLR <- lm(TotalSleep ~ NonDreaming+ Dreaming+Gestation+Predation+ Danger, data = clean_data[column])
+summary(bet_MLR)
+
+
+```
+
+```{r}
+
+
+sbp.res = resid(bet_MLR)
+par(mfrow=c(2,2))
+
+with(clean_data, {
+    
+    plot(predict.lm(bet_MLR),sbp.res,xlab="Fitted values",ylab="Residual")
+    abline(h=0)
+
+    # QQ plot
+    qqnorm(sbp.res,ylab="Total sleep")
+    qqline(sbp.res,lty=2)
+
+    # residual plot
+    plot (seq(1,length(sbp.res),1),sbp.res,xlab="Observation Order",ylab="Residual",type="b")
+    abline(h=0,lty=2)
+    
+})
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
+
+
+```{r}
+
+
+```
